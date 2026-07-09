@@ -1,5 +1,6 @@
 import logging
 import re
+import threading
 import time
 from typing import List, Dict, Any, Optional
 from arbcore.fetchers.realtime import RealtimeMarketManager
@@ -48,6 +49,9 @@ class MarketDataService:
         
         # [V10.1] 富途兜底日志去重：每 symbol 每 300 秒最多记一次 warning
         self._futu_warn_cooldown: Dict[str, float] = {}
+        # Futu OpenQuoteContext is shared by the reader; serialize quote calls from
+        # dashboard thread pools so repeated USO legs do not collide on one socket.
+        self._futu_quote_lock = threading.RLock()
 
         # [V10.1] 熔断器状态：{source_key: consecutive_failures}
         self._source_failures: Dict[str, int] = {}
@@ -92,6 +96,45 @@ class MarketDataService:
             'tripped': {k: v for k, v in self._source_tripped.items()},
         }
 
+    def _get_futu_quote(self, symbol: str, source_label: str, warn_key: str) -> Optional[Dict[str, Any]]:
+        """Fetch one quote from Futu with shared circuit-breaker and locking."""
+        if not self.futu_reader:
+            return None
+        if self._circuit_is_tripped('富途'):
+            logger.debug(f"🔴 富途已熔断，跳过 {symbol}")
+            return None
+        try:
+            with self._futu_quote_lock:
+                success, msg, prices = self.futu_reader.get_prices([symbol])
+            if success and symbol in prices:
+                self._circuit_record_success('富途')
+                quote = prices[symbol]
+                bid = quote.get('bid', 0)
+                ask = quote.get('ask', 0)
+                last = quote.get('last', 0)
+                return {
+                    'symbol': symbol,
+                    'price': last if last > 0 else bid,
+                    'bid': bid,
+                    'ask': ask if ask > 0 else bid,
+                    'amount': 0,
+                    'source': source_label
+                }
+
+            self._circuit_record_failure('富途')
+            now = time.time()
+            if now - self._futu_warn_cooldown.get(warn_key, 0) > 300:
+                logger.warning(f"⚠️ 富途获取{symbol}失败: {msg}")
+                self._futu_warn_cooldown[warn_key] = now
+        except Exception as e:
+            self._circuit_record_failure('富途')
+            err_key = f"{warn_key}_err"
+            now = time.time()
+            if now - self._futu_warn_cooldown.get(err_key, 0) > 300:
+                logger.error(f"⚠️ 富途获取{symbol}异常: {e}")
+                self._futu_warn_cooldown[err_key] = now
+        return None
+
     def get_realtime_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
         """获取实时行情
         
@@ -120,7 +163,7 @@ class MarketDataService:
             # [V10.11] 非夜盘时段直接跳过，避免无限刷"IB正在获取"日志
             if self.ib_reader and hasattr(self.ib_reader, 'is_us_night_session'):
                 if not self.ib_reader.is_us_night_session():
-                    return None
+                    return self._get_futu_quote(symbol, '富途(兜底)', symbol)
             # [V10.1] 熔断检查
             if self._circuit_is_tripped('IB'):
                 logger.debug(f"🔴 IB 已熔断，跳过 {symbol}")
@@ -180,79 +223,16 @@ class MarketDataService:
                 logger.debug(f"⚠️ IB Reader未初始化，美股ETF{symbol}尝试回退至富途")
             
             # 2. [NEW] IB 不可用时，兜底尝试富途
-            if self.futu_reader:
-                # [V10.1] 熔断检查
-                if self._circuit_is_tripped('富途'):
-                    logger.debug(f"🔴 富途已熔断，跳过兜底 {symbol}")
-                    return None
-                try:
-                    success, msg, prices = self.futu_reader.get_prices([symbol])
-                    if success and symbol in prices:
-                        self._circuit_record_success('富途')
-                        quote = prices[symbol]
-                        bid = quote.get('bid', 0)
-                        ask = quote.get('ask', 0)
-                        last = quote.get('last', 0)
-                        return {
-                            'symbol': symbol,
-                            'price': last if last > 0 else bid,
-                            'bid': bid,
-                            'ask': ask if ask > 0 else bid,
-                            'amount': 0,
-                            'source': '富途(兜底)'
-                        }
-                    else:
-                        self._circuit_record_failure('富途')
-                        # [V10.1] 去重：同一 symbol 300 秒内只记一次 warning
-                        now = time.time()
-                        last_warn = self._futu_warn_cooldown.get(symbol, 0)
-                        if now - last_warn > 300:
-                            logger.warning(f"⚠️ 富途兜底获取{symbol}失败: {msg}")
-                            self._futu_warn_cooldown[symbol] = now
-                except Exception as e:
-                    self._circuit_record_failure('富途')
-                    logger.error(f"⚠️ 富途兜底获取{symbol}异常: {e}")
+            quote = self._get_futu_quote(symbol, '富途(兜底)', symbol)
+            if quote:
+                return quote
             return None # [FIX] 无论如何，美股不能继续往下走A股引擎
                     
         elif source == 'FUTU':
-            # [V10.1] 熔断检查
-            if self._circuit_is_tripped('富途'):
-                logger.debug(f"🔴 富途已熔断，跳过 {symbol}")
-                return None
             # 直接走富途通道
-            if self.futu_reader:
-                try:
-                    success, msg, prices = self.futu_reader.get_prices([symbol])
-                    if success and symbol in prices:
-                        self._circuit_record_success('富途')
-                        quote = prices[symbol]
-                        bid = quote.get('bid', 0)
-                        ask = quote.get('ask', 0)
-                        last = quote.get('last', 0)
-                        return {
-                            'symbol': symbol,
-                            'price': last if last > 0 else bid,
-                            'bid': bid,
-                            'ask': ask if ask > 0 else bid,
-                            'amount': 0,
-                            'source': '富途'
-                        }
-                    else:
-                        self._circuit_record_failure('富途')
-                        # [V10.1] 去重：同一 symbol 300 秒内只记一次 warning
-                        now = time.time()
-                        last_warn = self._futu_warn_cooldown.get(f'futu_{symbol}', 0)
-                        if now - last_warn > 300:
-                            logger.warning(f"⚠️ 富途获取{symbol}失败: {msg}")
-                            self._futu_warn_cooldown[f'futu_{symbol}'] = now
-                except Exception as e:
-                    self._circuit_record_failure('富途')
-                    # [V10.1] 异常也加去重
-                    now = time.time()
-                    last_err = self._futu_warn_cooldown.get(f'futu_err_{symbol}', 0)
-                    if now - last_err > 300:
-                        logger.error(f"⚠️ 富途获取{symbol}异常: {e}")
-                        self._futu_warn_cooldown[f'futu_err_{symbol}'] = now
+            quote = self._get_futu_quote(symbol, '富途', f'futu_{symbol}')
+            if quote:
+                return quote
             return None # [FIX] 无论如何，美股不能继续往下走A股引擎
         
         # A股/港股/期货从RealtimeMarketManager获取

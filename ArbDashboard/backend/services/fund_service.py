@@ -1943,6 +1943,9 @@ class FundService:
             # [V10.9] 加入基金自身行情（供 Lazy 保守/内卷模式使用 lof_bid/lof_ask）
             if code not in etf_symbols:
                 etf_symbols.append(code)
+            # Regional ETF legs often collapse to one live symbol (e.g. USO,
+            # USO-EU, USO-JP -> USO); keep one quote request per symbol.
+            etf_symbols = list(dict.fromkeys(sym for sym in etf_symbols if sym))
 
             realtime_quotes = {}
             for sym in etf_symbols:
@@ -1989,24 +1992,45 @@ class FundService:
             t1_data = {}
             try:
                 cursor = conn.cursor()
+                cursor.execute("SELECT MAX(date) FROM usa_etf_daily_prices")
+                t1_date_row = cursor.fetchone()
+                t1_date = t1_date_row[0] if t1_date_row and t1_date_row[0] else ""
+
                 cursor.execute("""
-                    SELECT h.date, COALESCE(h.nav, f.nav) as nav, h.static_val,
-                           r.usd_cny_mid, h.calibration, h.price
+                    SELECT h.date, COALESCE(h.nav, f.nav) as nav, h.calibration, h.price
                     FROM unified_fund_history h
-                    LEFT JOIN exchange_rate r ON h.date = r.date
                     LEFT JOIN fund_daily_factors f ON h.date = f.date AND h.fund_code = f.fund_code
-                    WHERE h.fund_code = ?
+                    WHERE h.fund_code = ? AND COALESCE(h.nav, f.nav, 0) > 0
                     ORDER BY h.date DESC LIMIT 1
                 """, (code,))
-                row = cursor.fetchone()
-                if row:
+                nav_row = cursor.fetchone()
+
+                if t1_date:
+                    cursor.execute("""
+                        SELECT static_val, calibration, price
+                        FROM unified_fund_history
+                        WHERE fund_code = ? AND date = ?
+                    """, (code, t1_date))
+                    t1_row = cursor.fetchone()
+                    fx_row = cursor.execute(
+                        "SELECT usd_cny_mid FROM exchange_rate WHERE date <= ? AND usd_cny_mid IS NOT NULL ORDER BY date DESC LIMIT 1",
+                        (t1_date,)
+                    ).fetchone()
+                else:
+                    t1_row = None
+                    fx_row = None
+
+                if nav_row:
+                    t1_static_val = float(t1_row[0]) if t1_row and t1_row[0] is not None else 0.0
+                    t1_calibration = float(t1_row[1]) if t1_row and t1_row[1] is not None else 0.0
+                    t1_price = float(t1_row[2]) if t1_row and t1_row[2] is not None else 0.0
                     t1_data = {
-                        "date": row[0],
-                        "nav": float(row[1]) if row[1] is not None else 0.0,
-                        "static_val": float(row[2]) if row[2] is not None else 0.0,
-                        "exchange_rate": float(row[3]) if row[3] is not None else 0.0,
-                        "calibration": float(row[4]) if row[4] is not None else 0.0,
-                        "price": float(row[5]) if row[5] is not None else 0.0
+                        "date": t1_date or nav_row[0],
+                        "nav": float(nav_row[1]) if nav_row[1] is not None else 0.0,
+                        "static_val": t1_static_val,
+                        "exchange_rate": float(fx_row[0]) if fx_row and fx_row[0] is not None else 0.0,
+                        "calibration": t1_calibration if t1_calibration > 0 else (float(nav_row[2]) if nav_row[2] is not None else 0.0),
+                        "price": t1_price if t1_price > 0 else (float(nav_row[3]) if nav_row[3] is not None else 0.0)
                     }
 
                     # 如果没有独立校准值，查找全局期货校准值兜底
@@ -2043,7 +2067,7 @@ class FundService:
                             SELECT COALESCE(NULLIF(netvalue, 0), price) as price
                             FROM usa_etf_daily_prices
                             WHERE symbol IN (?, ?) AND date = ?
-                        """, (symbol, alt_symbol, row[0]))
+                        """, (symbol, alt_symbol, t1_data["date"]))
                         p_row = cursor.fetchone()
                         p_val = float(p_row[0]) if p_row and p_row[0] is not None else 0.0
 

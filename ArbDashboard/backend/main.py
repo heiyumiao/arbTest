@@ -363,6 +363,21 @@ async def lifespan(app: FastAPI):
             # [V10.0] 启动完成提示：引导用户手动连接需要的券商客户端
             system_status.add_milestone("INFO", "💡 如需实时行情，请点击顶部对应按钮连接券商客户端（通达信/IB/银河QMT/华泰QMT/富途）")
             
+            # [AI-2026-07-09] OpenD 端口在线不等于 FutuReader 已启用。
+            # 启动时主动连一次，避免外盘 ETF 报价显示为 '-'。
+            try:
+                if market_data_service.futu_reader:
+                    success, msg = market_data_service.futu_reader.reconnect()
+                    if success:
+                        market_data_service._circuit_reset('富途')
+                        logger.info("✅ 富途 OpenD 自动连接成功")
+                        system_status.add_milestone("SUCCESS", "富途 OpenD 自动连接成功")
+                    else:
+                        logger.info(f"ℹ️ 富途 OpenD 自动连接跳过: {msg}")
+                        system_status.add_milestone("INFO", f"富途 OpenD 未检测到: {msg}")
+            except Exception as e:
+                logger.warning(f"富途自动连接异常: {e}")
+
             # [AI-2026-07-07] 启动时自动检测并连接 IB Gateway（如果已在运行）
             try:
                 if market_data_service.ib_reader:
@@ -622,6 +637,9 @@ async def get_fund_valuation_meta(code: str):
         # basket为空时，用trade_etf兜底（如162411没有basket数据但有XOP）
         if not etf_symbols and fund_cfg.get('trade_etf'):
             etf_symbols.append(fund_cfg['trade_etf'])
+        # Regional legs such as USO-EU/USO-JP normalize to USO. Query it once
+        # so the shared Futu connection is not hammered by duplicate workers.
+        etf_symbols = list(dict.fromkeys(sym for sym in etf_symbols if sym))
             
         from concurrent.futures import ThreadPoolExecutor, as_completed
         realtime_quotes = {}
@@ -676,13 +694,22 @@ async def get_fund_valuation_meta(code: str):
             if t1_date:
                 # NAV 仍取最新有净值的记录（可能早于 T-1）
                 cursor.execute("""
-                    SELECT COALESCE(h.nav, f.nav) as nav, h.static_val, h.calibration, h.price 
+                    SELECT h.date, COALESCE(h.nav, f.nav) as nav, h.calibration, h.price
                     FROM unified_fund_history h
                     LEFT JOIN fund_daily_factors f ON h.date = f.date AND h.fund_code = f.fund_code
                     WHERE h.fund_code = ? AND COALESCE(h.nav, f.nav, 0) > 0
                     ORDER BY h.date DESC LIMIT 1
                 """, (code,))
-                row = cursor.fetchone()
+                nav_row = cursor.fetchone()
+                # T-1 static_val/price must come from t1_date itself. The latest NAV row
+                # can be an earlier date for QDII funds, and reusing its static_val shows
+                # a stale/wrong valuation under the T-1 date.
+                cursor.execute("""
+                    SELECT static_val, calibration, price
+                    FROM unified_fund_history
+                    WHERE fund_code = ? AND date = ?
+                """, (code, t1_date))
+                t1_row = cursor.fetchone()
                 # [AI-2026-07-07] T-1 汇率单独查 t1_date 对应行（不从 nav JOIN 行取）
                 # 原来用 nav 所在日期 JOIN 取汇率，导致 07-06 T-1 显示的是 07-03 净值行的汇率 6.8047
                 # 正确做法：按 t1_date 查 exchange_rate，无则往前找最近一条
@@ -696,14 +723,17 @@ async def get_fund_valuation_meta(code: str):
                         t1_fx = float(fx_row[0])
                 except Exception:
                     pass
-                if row:
+                if nav_row:
+                    t1_static_val = float(t1_row[0]) if t1_row and t1_row[0] is not None else 0.0
+                    t1_calibration = float(t1_row[1]) if t1_row and t1_row[1] is not None else 0.0
+                    t1_price = float(t1_row[2]) if t1_row and t1_row[2] is not None else 0.0
                     t1_data = {
                         "date": t1_date,
-                        "nav": float(row[0]) if row[0] is not None else 0.0,
-                        "static_val": float(row[1]) if row[1] is not None else 0.0,
+                        "nav": float(nav_row[1]) if nav_row[1] is not None else 0.0,
+                        "static_val": t1_static_val,
                         "exchange_rate": t1_fx,
-                        "calibration": float(row[2]) if row[2] is not None else 0.0,
-                        "price": float(row[3]) if row[3] is not None else 0.0
+                        "calibration": t1_calibration if t1_calibration > 0 else (float(nav_row[2]) if nav_row[2] is not None else 0.0),
+                        "price": t1_price if t1_price > 0 else (float(nav_row[3]) if nav_row[3] is not None else 0.0)
                     }
                 elif base_data:
                     # 连净值都取不到时，以 T-2 垫底

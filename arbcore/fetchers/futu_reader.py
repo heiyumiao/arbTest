@@ -44,6 +44,7 @@ class FutuReader:
         self.connect_timeout = connect_timeout
         self.prices = {}  # {symbol: {'bid': ..., 'ask': ..., 'last': ...}}
         self.subscribed_codes = set()
+        self.invalid_codes = set()
         self.last_connect_time = 0
         self.last_log_time = 0
         self.disabled = True  # [V10.0] 启动时不自动连接，用户点击页面"富途"按钮才重连
@@ -186,14 +187,6 @@ class FutuReader:
                 for attempt in range(1, self.max_retries + 1):
                     try:
                         self.ctx = FutuReader._connect_with_timeout(self.host, self.port, timeout=5)
-                        for _wait in range(50):
-                            if self.ctx._ctx._quote_conn:
-                                break
-                            time.sleep(0.1)
-                        if not self.ctx._ctx._quote_conn:
-                            self.ctx.close()
-                            self.ctx = None
-                            raise Exception("连接超时")
                         self.subscribed_codes = set()
                         connected = True
                         logger.info(f"[富途] 连接成功 (第 {attempt} 次)")
@@ -223,11 +216,17 @@ class FutuReader:
                 
                 # 港股通常是5位纯数字
                 if re.match(r'^[0-9]{5}$', clean_sym):
-                    futu_codes.append(f"HK.{clean_sym}")
+                    futu_code = f"HK.{clean_sym}"
+                    if futu_code in self.invalid_codes:
+                        continue
+                    futu_codes.append(futu_code)
                     valid_symbols.append(clean_sym)
                 # 美股代码通常为纯字母 (2-6位)
                 elif re.match(r'^[A-Za-z]{2,6}$', clean_sym):
-                    futu_codes.append(f"US.{clean_sym}")
+                    futu_code = f"US.{clean_sym}"
+                    if futu_code in self.invalid_codes:
+                        continue
+                    futu_codes.append(futu_code)
                     valid_symbols.append(clean_sym)
                 else:
                     logger.debug(f"[富途] 自动过滤非适用代码: {sym}")
@@ -241,6 +240,11 @@ class FutuReader:
             if new_codes:
                 ret, data = self.ctx.subscribe(new_codes, [SubType.QUOTE], session=Session.ALL)
                 if ret != 0:
+                    msg = str(data)
+                    if "未知股票" in msg or "unknown" in msg.lower():
+                        self.invalid_codes.update(new_codes)
+                        logger.warning(f"[富途] 订阅失败，已跳过无效标的: {data}")
+                        return False, f"富途不支持该标的: {data}", self.prices
                     self.close()
                     logger.warning(f"[富途] 订阅失败: {data}")
                     return False, f"富途API未运行 (订阅失败): {data}", self.prices
