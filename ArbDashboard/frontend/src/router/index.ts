@@ -7,7 +7,8 @@ import Dashboard from '../views/Dashboard.vue'
  * - 本地开发：LazyMode.vue 存在 → 正常加载（内部做角色判断）
  * - 开源用户：看不到 private/，路由指向 DongGeSecret.vue（锁页）
  */
-const LazyMode = () => import('../private/LazyMode.vue').catch(() => import('../views/DongGeSecret.vue'))
+const privateViews = import.meta.glob('../private/LazyMode.vue')
+const LazyMode = privateViews['../private/LazyMode.vue'] ?? (() => import('../views/DongGeSecret.vue'))
 
 const router = createRouter({
   history: createWebHistory(),
