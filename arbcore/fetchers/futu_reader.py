@@ -125,9 +125,12 @@ class FutuReader:
         重置 disabled 标志，重新尝试连接
         返回 (success: bool, message: str)
         """
-        if self.ctx is not None:
+        if self.ctx is not None and not self.disabled:
             logger.info("[富途] 已经连接，跳过重复重连")
             return True, "富途已经连接"
+        if self.ctx is not None and self.disabled:
+            logger.info("[富途] 检测到连接状态不一致，关闭旧连接后重连")
+            self.close()
         logger.info("[富途] 用户手动触发重连...")
         self.disabled = False
         self.ctx = None

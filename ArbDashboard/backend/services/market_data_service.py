@@ -49,6 +49,7 @@ class MarketDataService:
         
         # [V10.1] 富途兜底日志去重：每 symbol 每 300 秒最多记一次 warning
         self._futu_warn_cooldown: Dict[str, float] = {}
+        self._futu_reconnect_cooldown_until = 0.0
         # Futu OpenQuoteContext is shared by the reader; serialize quote calls from
         # dashboard thread pools so repeated USO legs do not collide on one socket.
         self._futu_quote_lock = threading.RLock()
@@ -96,13 +97,56 @@ class MarketDataService:
             'tripped': {k: v for k, v in self._source_tripped.items()},
         }
 
+    def _is_futu_opend_online(self) -> bool:
+        """Fast local port probe; OpenD online is necessary but not sufficient for quotes."""
+        reader = self.futu_reader
+        if not reader:
+            return False
+        try:
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.15)
+                return sock.connect_ex((reader.host, reader.port)) == 0
+        except Exception:
+            return False
+
+    def _ensure_futu_reader_enabled(self) -> bool:
+        """Recover FutuReader after OpenD was started/restarted behind our back."""
+        reader = self.futu_reader
+        if not reader:
+            return False
+        if not getattr(reader, "disabled", True) and not self._circuit_is_tripped('富途'):
+            return True
+
+        now = time.time()
+        if now < self._futu_reconnect_cooldown_until:
+            return False
+        self._futu_reconnect_cooldown_until = now + 15
+
+        if not self._is_futu_opend_online():
+            return False
+
+        logger.info("[富途] OpenD 端口已恢复，自动尝试重新启用 Reader")
+        success, msg = reader.reconnect()
+        if success:
+            self._circuit_reset('富途')
+            logger.info(f"[富途] 自动恢复成功: {msg}")
+            return True
+        logger.warning(f"[富途] 自动恢复失败: {msg}")
+        return False
+
     def _get_futu_quote(self, symbol: str, source_label: str, warn_key: str) -> Optional[Dict[str, Any]]:
         """Fetch one quote from Futu with shared circuit-breaker and locking."""
         if not self.futu_reader:
             return None
         if self._circuit_is_tripped('富途'):
-            logger.debug(f"🔴 富途已熔断，跳过 {symbol}")
-            return None
+            if not self._ensure_futu_reader_enabled():
+                logger.debug(f"🔴 富途已熔断，跳过 {symbol}")
+                return None
+        elif getattr(self.futu_reader, "disabled", True):
+            if not self._ensure_futu_reader_enabled():
+                logger.debug(f"⚠️ 富途 Reader 已禁用，跳过 {symbol}")
+                return None
         try:
             with self._futu_quote_lock:
                 success, msg, prices = self.futu_reader.get_prices([symbol])
@@ -281,16 +325,12 @@ class MarketDataService:
             sources.append("IB (未运行)")
         # 实时检测富途 OpenD 端口的真实连接状态（避免因 IB 优先级高未触发富途连接而导致状态不显示的问题）
         if self.futu_reader is not None and not any("富途" in s for s in sources):
-            import socket
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(0.1)
-                is_futu_online = (sock.connect_ex((self.futu_reader.host, self.futu_reader.port)) == 0)
-                sock.close()
-                if is_futu_online:
-                    sources.append("富途 (Ready)")
-            except:
-                pass
+            futu_enabled = not getattr(self.futu_reader, "disabled", True)
+            futu_ctx = getattr(self.futu_reader, "ctx", None) is not None
+            if futu_enabled and futu_ctx:
+                sources.append("富途 (Ready)")
+            elif self._is_futu_opend_online():
+                sources.append("富途 (待重连)")
         return sources
     
     # [AI-2026-07-03] 修复 SI 实时估值公式：对齐 Woody — 将 SI 转 CNY/kg 后与 AG0 昨结算比，而非直接用 SI 百分比涨跌幅
