@@ -149,8 +149,8 @@ def _print_data_source_banners():
     sources = [
         ("tdx",    "通达信",  _is_fetcher_connected(active.get("tdx")),
          "请点击顶部'通达信'按钮启动"),
-        ("guojin", "国金QMT", _is_fetcher_connected(active.get("guojin")),
-         "请点击顶部'国金QMT'按钮启动"),
+        ("guojin", "华泰QMT", _is_fetcher_connected(active.get("guojin")),
+         "请点击顶部'华泰QMT'按钮启动"),
         ("galaxy", "银河QMT", _is_fetcher_connected(active.get("galaxy")),
          "请点击顶部'银河QMT'按钮启动"),
         ("ib",     "IB 盈透证券",
@@ -361,7 +361,7 @@ async def lifespan(app: FastAPI):
             _print_data_source_banners()
             
             # [V10.0] 启动完成提示：引导用户手动连接需要的券商客户端
-            system_status.add_milestone("INFO", "💡 如需实时行情，请点击顶部对应按钮连接券商客户端（通达信/IB/银河QMT/国金QMT/富途）")
+            system_status.add_milestone("INFO", "💡 如需实时行情，请点击顶部对应按钮连接券商客户端（通达信/IB/银河QMT/华泰QMT/富途）")
             
             # [AI-2026-07-07] 启动时自动检测并连接 IB Gateway（如果已在运行）
             try:
@@ -1810,7 +1810,7 @@ async def reconnect_galaxy():
 
 @app.post("/api/system/reconnect_guojin")
 async def reconnect_guojin():
-    """重连国金QMT - 使用 reconnect() 方法，试连 3 次"""
+    """重连华泰QMT - 使用 reconnect() 方法，试连 3 次"""
     try:
         if market_data_service.realtime_manager:
             rm = market_data_service.realtime_manager
@@ -1836,7 +1836,7 @@ async def reconnect_guojin():
             system_status.add_milestone("WARNING", "实时行情管理器未启动")
             return {"status": "error", "message": "实时行情管理器未启动"}
     except Exception as e:
-        system_status.add_milestone("ERROR", f"国金QMT重连异常: {e}")
+        system_status.add_milestone("ERROR", f"华泰QMT重连异常: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.post("/api/system/reconnect_engine")

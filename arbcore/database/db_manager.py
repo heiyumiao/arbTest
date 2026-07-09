@@ -106,7 +106,7 @@ class DatabaseManager:
             if cursor.fetchone()[0] == 0:
                 initial_sources = [
                     ('realtime_market', 'tdx', 1, 1, '{"desc": "通达信内存直连"}'),
-                    ('realtime_market', 'guojin', 2, 1, '{"desc": "国金QMT (xtquant)"}'),
+                    ('realtime_market', 'guojin', 2, 1, '{"desc": "华泰QMT (xtquant)"}'),
                     ('realtime_market', 'galaxy', 3, 1, '{"desc": "银河QMT (Socket)"}'),
                     ('realtime_market', 'sina', 4, 1, '{"desc": "新浪财经轮询"}')
                 ]

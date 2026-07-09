@@ -17,7 +17,7 @@ export function useOrderLogic() {
       return
     }
     
-    const brokerName = broker === 'yinhe_qmt' ? '银河QMT' : (broker === 'tdx' ? '通达信' : '国金QMT')
+    const brokerName = broker === 'yinhe_qmt' ? '银河QMT' : (broker === 'tdx' ? '通达信' : '华泰QMT')
     const actionName = action === 'BUY' ? '买入' : '卖出'
     
     dialog.warning({

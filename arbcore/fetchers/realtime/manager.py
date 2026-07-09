@@ -16,7 +16,7 @@ CONNECT_RETRY_DELAY = 3          # 重试间隔（秒）
 # 需要启动客户端的消息提示映射
 CLIENT_STARTUP_HINTS = {
     "tdx":    "⚠️ 通达信客户端未运行（已检测{retries}次均失败），请前往主面板启动通达信交易终端",
-    "guojin": "⚠️ 国金QMT（xtquant）未运行（已检测{retries}次均失败），请前往主面板启动国金极速交易终端",
+    "guojin": "⚠️ 华泰QMT（xtquant）未运行（已检测{retries}次均失败），请前往主面板启动华泰MiniQMT",
     "galaxy": "⚠️ 银河QMT客户端未运行（已检测{retries}次均失败），请前往主面板启动银河QMT并加载v4.0脚本",
 }
 
@@ -90,7 +90,7 @@ class RealtimeMarketManager:
         import json
         source_name_map = {
             "tdx": "通达信",
-            "guojin": "国金QMT",
+            "guojin": "华泰QMT",
             "galaxy": "银河QMT",
             "sina": "新浪财经"
         }

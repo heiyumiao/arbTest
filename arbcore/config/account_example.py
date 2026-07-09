@@ -5,8 +5,12 @@
 # 交易账号配置
 # ============================================================
 
-# 国金证券 MiniQMT 账号
-GJS_ACCOUNT = ""  # 填入你的国金QMT账号
+# 华泰证券 MiniQMT 账号
+HT_ACCOUNT = ""  # 填入你的华泰 MiniQMT 账号
+HTQMT_INSTALL_PATH = r"D:\HTQMT"  # 按实际安装目录修改
+
+# 旧字段兼容；新配置请优先使用 HT_ACCOUNT
+GJS_ACCOUNT = HT_ACCOUNT
 
 # 银河证券 QMT 账号 (默认)
 YH_ACCOUNT = ""  # 填入你的银河QMT账号

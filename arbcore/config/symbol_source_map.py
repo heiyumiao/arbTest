@@ -5,7 +5,7 @@ symbol_source_map.py - 标的代码与数据源映射配置
 核心设计原则：
 1. 所有标的的数据源固定写在映射表中，不需要每次询问
 2. 美股ETF支持双数据源：IB（主）+ 富途（备），无IB账户用户可用富途
-3. A股支持多数据源：TDX（主）+ 银河QMT（备1）+ 国金QMT（备2）
+3. A股支持多数据源：TDX（主）+ 银河QMT（备1）+ 华泰QMT（xtquant，备2）
 4. 数据源选择逻辑在 dynamic_valuation.py 或 fund_service.py 中根据用户配置切换
 
 数据源类型：
@@ -13,7 +13,7 @@ symbol_source_map.py - 标的代码与数据源映射配置
 - FUTU: 富途（港股/美股，备用数据源，无IB账户用户可用）
 - TDX: 通达信/新浪（A股/期货/指数，主数据源）
 - QMT_YH: 银河QMT（A股/期货，备用数据源1）
-- QMT_GJ: 国金QMT（A股/期货，备用数据源2）
+- QMT_GJ: 华泰QMT（A股/期货，备用数据源2，保留旧 key 名称）
 - WOODY: Woody数据源（QDII估值）
 - SINA: 新浪财经（A股/指数）
 
@@ -28,12 +28,12 @@ symbol_source_map.py - 标的代码与数据源映射配置
 
 A股多数据源说明：
 - 默认从 TDX 获取实时价格（TDXFetcher）
-- TDX不可用时可切换到银河QMT或国金QMT
+- TDX不可用时可切换到银河QMT或华泰QMT
 - 数据源选择逻辑：
   if user_config.get('qmt_type') == 'YH':
       source = 'QMT_YH'  # 银河QMT
   elif user_config.get('qmt_type') == 'GJ':
-      source = 'QMT_GJ'  # 国金QMT
+      source = 'QMT_GJ'  # 华泰QMT
   else:
       source = 'TDX'  # 默认通达信
 - 以下所有美股ETF都可以从富途读取，只需在配置中切换即可
@@ -292,7 +292,7 @@ SOURCE_SYMBOL_MAP = {
     'FUTU': [],
     'TDX': [],
     'QMT_YH': [],  # 银河QMT（A股备用）
-    'QMT_GJ': [],  # 国金QMT（A股备用）
+    'QMT_GJ': [],  # 华泰QMT（A股备用，保留旧 key 名称）
     'SINA': [],
     'WOODY': [],
 }
@@ -445,7 +445,7 @@ def get_cn_stock_source(qmt_type: str = None) -> str:
         qmt_type: QMT类型，可选值：
             - None 或 'TDX': 通达信（默认）
             - 'YH': 银河QMT
-            - 'GJ': 国金QMT
+            - 'GJ': 华泰QMT（旧参数名兼容）
     
     Returns:
         'TDX', 'QMT_YH', 或 'QMT_GJ'
@@ -456,7 +456,7 @@ def get_cn_stock_source(qmt_type: str = None) -> str:
         
         cn_source = get_cn_stock_source()          # 'TDX'（默认）
         cn_source = get_cn_stock_source('YH')      # 'QMT_YH'（银河QMT）
-        cn_source = get_cn_stock_source('GJ')      # 'QMT_GJ'（国金QMT）
+        cn_source = get_cn_stock_source('GJ')      # 'QMT_GJ'（华泰QMT）
     """
     if qmt_type == 'YH':
         return 'QMT_YH'

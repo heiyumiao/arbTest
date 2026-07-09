@@ -300,7 +300,7 @@ const setDefaultIbSymbols = () => {
 
 
 const sourceNames = {
-    'guojin': '国金证券 QMT',
+    'guojin': '华泰证券 QMT',
     'galaxy': '银河证券 QMT',
     'tdx': '通达信极速',
     'sina': '新浪财经 API',

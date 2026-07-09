@@ -28,7 +28,7 @@ export function reconnectGalaxy() {
   return client.post('/api/system/reconnect_galaxy')
 }
 
-/** 重连国金QMT */
+/** 重连华泰QMT；endpoint 名称保留 reconnect_guojin 以兼容后端旧路由 */
 export function reconnectGuojin() {
   return client.post('/api/system/reconnect_guojin')
 }

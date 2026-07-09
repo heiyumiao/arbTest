@@ -69,9 +69,9 @@
           </n-tag>
           <n-tag :type="hasGuojin ? 'success' : 'warning'" size="small" round
             :style="{ fontWeight: 'bold', cursor: hasGuojin ? 'default' : 'pointer', width: '100%', justifyContent: 'center' }"
-            @click="reconnectWithGuard(hasGuojin, '国金QMT', reconnectGuojin)">
+            @click="reconnectWithGuard(hasGuojin, '华泰QMT', reconnectGuojin)">
             <template #icon><n-icon><Zap /></n-icon></template>
-            国金QMT
+            华泰QMT
           </n-tag>
         </div>
         <n-text style="font-size: 10px; font-weight: bold; color: #888; display: block; text-align: center; margin-top: 4px;">点击切换启动/停止</n-text>
@@ -181,7 +181,7 @@ const reconnectWithGuard = (isConnected: boolean, label: string, fn: () => void)
 
 const reconnectTdx = () => reconnectEngine('通达信', () => marketStore.reconnectTdx())
 const reconnectGalaxy = () => reconnectEngine('银河QMT', () => marketStore.reconnectGalaxy())
-const reconnectGuojin = () => reconnectEngine('国金QMT', () => marketStore.reconnectGuojin())
+const reconnectGuojin = () => reconnectEngine('华泰QMT', () => marketStore.reconnectGuojin())
 const reconnectFutu = () => reconnectEngine('富途', () => marketStore.reconnectFutu())
 
 const fetchNavAlert = async () => {

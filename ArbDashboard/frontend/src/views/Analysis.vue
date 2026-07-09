@@ -454,7 +454,7 @@
                <!-- 下单区-1: A股 LOF -->
                <div style="width: 100%; display: flex; align-items: center; gap: 6px; background: #fff5f5; padding: 6px 10px; border-radius: 6px; border: 1px solid #ffcdd2; flex-wrap: wrap; box-sizing: border-box;">
                   <span style="color:#666; font-size: 12px;">券商:</span>
-                  <n-select v-model:value="lofBroker" size="small" style="width: 130px;" :options="[ { label: '银河QMT', value: 'yinhe_qmt' }, { label: '通达信(华宝)', value: 'tdx' }, { label: '国金QMT', value: 'guojin_qmt' } ]" />
+                  <n-select v-model:value="lofBroker" size="small" style="width: 130px;" :options="[ { label: '银河QMT', value: 'yinhe_qmt' }, { label: '通达信(华宝)', value: 'tdx' }, { label: '华泰QMT', value: 'huatai_qmt' } ]" />
                   <span style="font-weight:bold; color:#d32f2f; font-size:13px;">{{ fundName }} ({{ fundCode }}):</span>
                   <div style="flex: 1; min-width: 5px;"></div>
                   <span style="color:#666; font-size: 12px; white-space: nowrap;">数量:</span>
@@ -1016,7 +1016,7 @@ const localDepthSource = computed(() => {
   const s = depth.source.toLowerCase()
   if (s.includes('tongdaxin') || s.includes('tdx')) return '通达信'
   if (s.includes('yinhe')) return '银河QMT'
-  if (s.includes('guojin') || s.includes('gj')) return '国金QMT'
+  if (s.includes('huatai') || s.includes('guojin') || s.includes('gj')) return '华泰QMT'
   if (s.includes('sina')) return '新浪'
   if (s.includes('tencent')) return '腾讯'
   return depth.source

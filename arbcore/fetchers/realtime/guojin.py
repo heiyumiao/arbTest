@@ -8,16 +8,16 @@ logger = logging.getLogger(__name__)
 
 class GuojinQmtFetcher(BaseRealtimeFetcher):
     """
-    国金证券 QMT (xtquant) 实时行情抓取器。
-    要求本地运行国金极速交易终端。
+    华泰 MiniQMT (xtquant) 实时行情抓取器。
+    类名保留 GuojinQmtFetcher，兼容旧的 active_fetchers['guojin'] 注册键。
     """
     
     def __init__(self):
-        super().__init__("Guojin_QMT")
+        super().__init__("Huatai_QMT")
         self.xtdata = None
         self._subscribed_symbols = set()
         
-        # [V10.0] 连接控制：启动时不自动连接，用户点击页面"国金QMT"按钮才重连
+        # [V10.0] 连接控制：启动时不自动连接，用户点击页面"华泰QMT"按钮才重连
         self.disabled = True
         self.max_retries = 3
         self.last_connect_time = 0
@@ -25,7 +25,7 @@ class GuojinQmtFetcher(BaseRealtimeFetcher):
 
     def connect(self) -> bool:
         if self.disabled:
-            logger.debug("[QMT国金] 已禁用，跳过连接")
+            logger.debug("[QMT华泰] 已禁用，跳过连接")
             return False
         try:
             from xtquant import xtdata
@@ -35,61 +35,61 @@ class GuojinQmtFetcher(BaseRealtimeFetcher):
                 test_tick = self.xtdata.get_full_tick(['000001.SZ'])
                 if test_tick and '000001.SZ' in test_tick and test_tick['000001.SZ']:
                     self.is_connected = True
-                    logger.info("✅ 国金QMT (xtquant) 适配器加载成功，连接验证通过")
+                    logger.info("✅ 华泰QMT (xtquant) 适配器加载成功，连接验证通过")
                     return True
                 else:
-                    logger.warning("⚠️ 国金QMT xtdata 已加载但无法获取行情（QMT终端可能未启动）")
+                    logger.warning("⚠️ 华泰QMT xtdata 已加载但无法获取行情（QMT终端可能未启动）")
                     self.is_connected = False
                     return False
             except Exception as probe_e:
-                logger.warning(f"⚠️ 国金QMT xtdata 连接验证失败（QMT终端可能未启动）: {probe_e}")
+                logger.warning(f"⚠️ 华泰QMT xtdata 连接验证失败（QMT终端可能未启动）: {probe_e}")
                 self.is_connected = False
                 return False
         except ImportError:
             logger.error("❌ 未安装 xtquant 库，请运行 'pip install xtquant'")
             return False
         except Exception as e:
-            logger.error(f"❌ 国金QMT 连接异常: {e}")
+            logger.error(f"❌ 华泰QMT 连接异常: {e}")
             return False
 
     def _try_connect_silent(self):
-        """静默尝试连接国金QMT，最多 max_retries 次"""
+        """静默尝试连接华泰QMT，最多 max_retries 次"""
         if self.disabled:
             return
         for attempt in range(1, self.max_retries + 1):
             try:
                 if self.connect():
-                    logger.info(f"{'='*50}\n[QMT国金] 连接成功 (第 {attempt} 次尝试)\n{'='*50}")
+                    logger.info(f"{'='*50}\n[QMT华泰] 连接成功 (第 {attempt} 次尝试)\n{'='*50}")
                     self.disabled = False
                     return
             except Exception as e:
-                logger.debug(f"[QMT国金] 连接尝试 {attempt}/{self.max_retries} 失败: {e}")
+                logger.debug(f"[QMT华泰] 连接尝试 {attempt}/{self.max_retries} 失败: {e}")
                 time.sleep(1)
-        logger.warning("[QMT国金] 连接失败（已尝试 {} 次），已禁用国金QMT读取器。如需启用，请点击页面顶部的'国金QMT'标签重试。".format(self.max_retries))
+        logger.warning("[QMT华泰] 连接失败（已尝试 {} 次），已禁用华泰QMT读取器。如需启用，请点击页面顶部的'华泰QMT'标签重试。".format(self.max_retries))
         self.disabled = True
         self.is_connected = False
     
     def reconnect(self):
-        """手动重连（供用户点击"国金QMT"按钮时调用）"""
+        """手动重连（供用户点击"华泰QMT"按钮时调用）"""
         if self.is_connected:
-            logger.info("[QMT国金] 已经连接，跳过重复重连")
-            return True, "国金QMT已经连接"
-        logger.info("[QMT国金] 用户手动触发重连...")
+            logger.info("[QMT华泰] 已经连接，跳过重复重连")
+            return True, "华泰QMT已经连接"
+        logger.info("[QMT华泰] 用户手动触发重连...")
         self.disabled = False
         self.is_connected = False
         self.last_connect_time = 0
         for attempt in range(1, self.max_retries + 1):
             try:
                 if self.connect():
-                    logger.info(f"[QMT国金] 手动重连成功 (第 {attempt} 次)")
+                    logger.info(f"[QMT华泰] 手动重连成功 (第 {attempt} 次)")
                     self.disabled = False
-                    return True, f"国金QMT连接成功 (第 {attempt} 次尝试)"
+                    return True, f"华泰QMT连接成功 (第 {attempt} 次尝试)"
             except Exception as e:
-                logger.warning(f"[QMT国金] 重连失败 (第 {attempt}/{self.max_retries} 次): {e}")
+                logger.warning(f"[QMT华泰] 重连失败 (第 {attempt}/{self.max_retries} 次): {e}")
                 time.sleep(1)
         self.disabled = True
-        logger.warning("[QMT国金] 手动重连失败（已尝试 {} 次），请确认国金QMT终端已启动".format(self.max_retries))
-        return False, f"国金QMT重连失败（已尝试 {self.max_retries} 次），请确认国金QMT终端已启动"
+        logger.warning("[QMT华泰] 手动重连失败（已尝试 {} 次），请确认华泰QMT终端已启动".format(self.max_retries))
+        return False, f"华泰QMT重连失败（已尝试 {self.max_retries} 次），请确认华泰QMT终端已启动"
 
     def subscribe(self, symbols: List[str]):
         if not self.is_connected: return
@@ -98,7 +98,7 @@ class GuojinQmtFetcher(BaseRealtimeFetcher):
         for s in qmt_symbols:
             self.xtdata.subscribe_quote(s, period='tick', count=1, callback=self._internal_callback)
             self._subscribed_symbols.add(s)
-        logger.info(f"✅ 国金QMT 已订阅: {qmt_symbols}")
+        logger.info(f"✅ 华泰QMT 已订阅: {qmt_symbols}")
 
     def unsubscribe(self, symbols: List[str]):
         if not self.is_connected: return
@@ -163,7 +163,7 @@ class GuojinQmtFetcher(BaseRealtimeFetcher):
                     return self._format_tick(qmt_symbol, tick)
             return None
         except Exception as e:
-            logger.warning(f"国金QMT 获取行情失败 ({symbol}): {e}")
+            logger.warning(f"华泰QMT 获取行情失败 ({symbol}): {e}")
             return None
 
     def normalize_symbol(self, symbol: str) -> str:
@@ -178,4 +178,4 @@ class GuojinQmtFetcher(BaseRealtimeFetcher):
         """断开连接"""
         self.is_connected = False
         self.xtdata = None
-        logger.info("🔌 国金QMT 已断开")
+        logger.info("🔌 华泰QMT 已断开")

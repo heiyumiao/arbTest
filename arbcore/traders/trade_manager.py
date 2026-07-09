@@ -15,14 +15,22 @@ logger = logging.getLogger(__name__)
 
 # 优先尝试从 arbcore.config 导入
 try:
-    from arbcore.config.account_private import GJS_ACCOUNT
+    from arbcore.config.account_private import HT_ACCOUNT, HTQMT_INSTALL_PATH
+except ImportError:
+    HT_ACCOUNT = None
+    HTQMT_INSTALL_PATH = None
+
+try:
+    from arbcore.config.account_private import GJS_ACCOUNT as LEGACY_GJS_ACCOUNT
 except ImportError:
     try:
         # 兼容旧路径
-        from account_private import GJS_ACCOUNT
+        from account_private import GJS_ACCOUNT as LEGACY_GJS_ACCOUNT
     except ImportError:
         print("WARNING: account_private.py 不存在，请复制 account_example.py 并填入真实账号")
-        GJS_ACCOUNT = None
+        LEGACY_GJS_ACCOUNT = None
+
+HT_ACCOUNT = HT_ACCOUNT or LEGACY_GJS_ACCOUNT
 
 class TradeManager:
     """A股/LOF统一交易接口管理器"""
@@ -39,8 +47,8 @@ class TradeManager:
 
         # 启动时自动初始化可用通道
         self._init_tdx()
-        # [V9.1] 国金QMT初始化放后台线程，不阻塞 uvicorn 启动
-        threading.Thread(target=self._init_guojin_qmt, daemon=True).start()
+        # [V9.1] MiniQMT初始化放后台线程，不阻塞 uvicorn 启动
+        threading.Thread(target=self._init_huatai_qmt, daemon=True).start()
 
     def _init_tdx(self):
         try:
@@ -77,10 +85,10 @@ class TradeManager:
         except Exception as e:
             logger.warning(f"[TradeManager] 通达信模块跳过加载: {e}")
 
-    def _init_guojin_qmt(self):
+    def _init_huatai_qmt(self):
         try:
-            # ====================== 国金 QMT 路径与环境配置 ======================
-            QMT_INSTALL_PATH = r"D:\GJQMT"
+            # ====================== 华泰 MiniQMT 路径与环境配置 ======================
+            QMT_INSTALL_PATH = self._resolve_huatai_qmt_path()
             if os.path.exists(QMT_INSTALL_PATH):
                 if QMT_INSTALL_PATH not in sys.path:
                     sys.path.append(QMT_INSTALL_PATH)
@@ -94,7 +102,7 @@ class TradeManager:
                 qmt_path = os.path.join(QMT_INSTALL_PATH, 'userdata_mini')
                 session_id = int(time.time())
                 self.xt_trader = xttrader.XtQuantTrader(qmt_path, session_id)
-                self.xt_account = StockAccount(GJS_ACCOUNT)
+                self.xt_account = StockAccount(HT_ACCOUNT)
                 self.xtconstant = xtconstant
                 
                 self.xt_trader.start()
@@ -102,11 +110,27 @@ class TradeManager:
                 if connect_result == 0:
                     self.xt_trader.subscribe(self.xt_account)
                     self.xtquant_available = True
-                    logger.info(f"[TradeManager] 已挂载【国金MiniQMT】原生直连通道 (账号:{self.xt_account.account_id})")
+                    logger.info(f"[TradeManager] 已挂载【华泰MiniQMT】原生直连通道 (账号:{self.xt_account.account_id})")
                 else:
-                    logger.warning(f"[TradeManager] 国金QMT客户端连接失败 (错误码: {connect_result})")
+                    logger.warning(f"[TradeManager] 华泰QMT客户端连接失败 (错误码: {connect_result})")
         except Exception as e:
-            logger.info(f"[TradeManager] 国金QMT模块跳过加载: {e}")
+            logger.info(f"[TradeManager] 华泰QMT模块跳过加载: {e}")
+
+    def _resolve_huatai_qmt_path(self):
+        candidates = [
+            HTQMT_INSTALL_PATH,
+            os.environ.get("HTQMT_INSTALL_PATH"),
+            r"D:\HTQMT",
+            r"D:\GJQMT",  # legacy path kept as a compatibility fallback
+        ]
+        for path in candidates:
+            if path and os.path.exists(path):
+                return path
+        return HTQMT_INSTALL_PATH or r"D:\HTQMT"
+
+    def _init_guojin_qmt(self):
+        """Backward-compatible alias for older callers."""
+        return self._init_huatai_qmt()
 
     def send_order(self, broker, action, symbol, volume, price, account_id=None):
         """暴露给外部的统一路由函数"""
@@ -147,8 +171,8 @@ class TradeManager:
             except Exception as e:
                 return False, f"银河QMT下单异常: {str(e)}"
                 
-        elif broker == 'guojin_qmt':
-            if not self.xtquant_available: return False, "国金QMT接口未就绪"
+        elif broker in ('huatai_qmt', 'guojin_qmt'):
+            if not self.xtquant_available: return False, "华泰QMT接口未就绪"
             try:
                 # 转换买卖方向
                 order_type = self.xtconstant.STOCK_BUY if action == 'BUY' else self.xtconstant.STOCK_SELL
@@ -165,11 +189,11 @@ class TradeManager:
                     "API下单"
                 )
                 if order_id != -1:
-                    return True, f"国金QMT下单成功，委托编号: {order_id}"
+                    return True, f"华泰QMT下单成功，委托编号: {order_id}"
                 else:
-                    return False, "国金QMT下单失败（返回编号 -1）"
+                    return False, "华泰QMT下单失败（返回编号 -1）"
             except Exception as e:
-                return False, f"国金QMT下单异常: {e}"
+                return False, f"华泰QMT下单异常: {e}"
                 
         elif broker == 'tdx':
             if not self.tdx_available: return False, "通达信接口未就绪"
