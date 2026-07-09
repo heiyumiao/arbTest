@@ -67,7 +67,7 @@ class DailyUpdater(BaseApp):
         """
         [架构升级] 从云端增量同步所有缺失的历史数据 (支持断网补全)
         """
-        if not all([VPS_HOST, VPS_USER, VPS_PASSWORD]):
+        if not (VPS_HOST and VPS_USER):
             return []
         
         # 数据目录迁移到 ArbDashboard/data/（与脚本目录解耦）
@@ -81,18 +81,42 @@ class DailyUpdater(BaseApp):
             ssh = paramiko.SSHClient()
             ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-            # 优先使用私钥认证，失败则降级到密码
-            try:
-                if VPS_KEY_PATH and os.path.exists(VPS_KEY_PATH):
+            connected = False
+
+            # 优先使用显式私钥，其次使用本机 SSH agent/key，最后才尝试密码。
+            if VPS_KEY_PATH and os.path.exists(VPS_KEY_PATH):
+                try:
                     pkey = paramiko.Ed25519Key.from_private_key_file(VPS_KEY_PATH, password=VPS_KEY_PASSWORD)
                     ssh.connect(VPS_HOST, port=VPS_PORT, username=VPS_USER, pkey=pkey, timeout=10)
-                    self.logger.info(f"[VPS] SSH 私钥认证成功")
-                else:
-                    raise Exception("no key file")
-            except Exception as key_err:
-                self.logger.info(f"[VPS] 私钥认证失败 ({key_err})，降级到密码认证")
-                ssh.connect(VPS_HOST, port=VPS_PORT, username=VPS_USER, password=VPS_PASSWORD, timeout=10,
-                            look_for_keys=False, allow_agent=False)
+                    connected = True
+                    self.logger.info("[VPS] SSH 私钥认证成功")
+                except Exception as key_err:
+                    self.logger.info(f"[VPS] 私钥认证失败 ({key_err})，继续尝试其他认证方式")
+
+            if not connected:
+                try:
+                    ssh.connect(VPS_HOST, port=VPS_PORT, username=VPS_USER, timeout=10)
+                    connected = True
+                    self.logger.info("[VPS] SSH agent/key 认证成功")
+                except Exception as agent_err:
+                    self.logger.info(f"[VPS] SSH agent/key 认证失败 ({agent_err})")
+
+            if not connected and VPS_PASSWORD:
+                ssh.connect(
+                    VPS_HOST,
+                    port=VPS_PORT,
+                    username=VPS_USER,
+                    password=VPS_PASSWORD,
+                    timeout=10,
+                    look_for_keys=False,
+                    allow_agent=False,
+                )
+                connected = True
+                self.logger.info("[VPS] SSH 密码认证成功")
+
+            if not connected:
+                self.logger.warning("[VPS] 没有可用 SSH 认证方式")
+                return []
             
             sftp = ssh.open_sftp()
             # 1. 列表远程目录下的所有文件

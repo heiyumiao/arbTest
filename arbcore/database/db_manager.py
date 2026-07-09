@@ -60,6 +60,10 @@ class DatabaseManager:
             except sqlite3.OperationalError: pass
 
             conn.execute('''CREATE TABLE IF NOT EXISTS futures_daily (date TEXT NOT NULL, symbol TEXT NOT NULL, settle_price REAL, calibration REAL, updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')), PRIMARY KEY (date, symbol))''')
+            try: conn.execute('ALTER TABLE futures_daily ADD COLUMN close_price REAL')
+            except sqlite3.OperationalError: pass
+            try: conn.execute('ALTER TABLE futures_daily ADD COLUMN volume INTEGER')
+            except sqlite3.OperationalError: pass
             conn.execute('''CREATE TABLE IF NOT EXISTS fund_basket_weights (date TEXT NOT NULL, fund_code TEXT NOT NULL, underlying_symbol TEXT NOT NULL, weight REAL, updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')), PRIMARY KEY (date, fund_code, underlying_symbol))''')
             conn.execute('''CREATE TABLE IF NOT EXISTS fund_daily_factors (date TEXT NOT NULL, fund_code TEXT NOT NULL, calibration REAL, hedge REAL, position REAL, nav REAL, updated_at TIMESTAMP DEFAULT (datetime('now', 'localtime')), PRIMARY KEY (date, fund_code))''')
             try: conn.execute('ALTER TABLE fund_daily_factors ADD COLUMN nav REAL')

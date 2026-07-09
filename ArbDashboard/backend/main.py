@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from datetime import datetime
+from process_utils import resolve_python_executable
 
 # Setup logging
 backend_dir = os.path.dirname(os.path.abspath(__file__))
@@ -315,20 +316,9 @@ async def lifespan(app: FastAPI):
             scripts_dir = os.path.normpath(os.path.join(backend_dir, "scheduler"))
             script_path = os.path.join(scripts_dir, "daily_updater.py")
             
-            # [V4.1] 尝试多种 Python 路径
-            python_exe_candidates = [
-                os.path.normpath(os.path.join(backend_dir, "..", "..", ".venv", "Scripts", "python.exe")),
-                os.path.normpath(os.path.join(backend_dir, "..", "..", "..", ".venv", "Scripts", "python.exe")),
-                os.path.normpath(os.path.join(backend_dir, "..", "..", "..", "Python311", "python.exe")),
-                "python",
-            ]
-            
-            python_exe = None
-            for candidate in python_exe_candidates:
-                if os.path.exists(candidate):
-                    python_exe = candidate
-                    logger.info(f"✅ 找到 Python: {python_exe}")
-                    break
+            python_exe = resolve_python_executable(backend_dir)
+            if python_exe:
+                logger.info(f"✅ 找到 Python: {python_exe}")
             
             if python_exe and os.path.exists(script_path):
                 try:
@@ -401,14 +391,7 @@ async def lifespan(app: FastAPI):
             # [AI-2026-06-28] daily_updater.py 在 scheduler/ 下
             return os.path.normpath(os.path.join(backend_dir, "scheduler"))
         def _find_python():
-            for candidate in [
-                os.path.normpath(os.path.join(backend_dir, "..", "..", ".venv", "Scripts", "python.exe")),
-                os.path.normpath(os.path.join(backend_dir, "..", "..", "..", ".venv", "Scripts", "python.exe")),
-                "python",
-            ]:
-                if os.path.exists(candidate):
-                    return candidate
-            return None
+            return resolve_python_executable(backend_dir)
         def _run_daily_updater(args_list):
             sd = _get_scripts_dir()
             sp = os.path.join(sd, "daily_updater.py")
@@ -430,12 +413,17 @@ async def lifespan(app: FastAPI):
                 today = now.strftime("%Y-%m-%d")
                 if _morning_refreshed_today and today != _morning_refresh_time:
                     _morning_refreshed_today = False  # 新的一天
-                if not _morning_refreshed_today and now.hour >= 9 and (now.hour > 9 or now.minute >= 20):
+                morning_sources = ['woody_lof_batch', 'official_exchange_rate', 'futures_data', 'jsl_shares_data']
+                if not _morning_refreshed_today and all(db.is_access_synced_today(today, source=src) for src in morning_sources):
                     _morning_refreshed_today = True
                     _morning_refresh_time = today
+                    continue
+                if not _morning_refreshed_today and now.hour >= 9 and (now.hour > 9 or now.minute >= 20):
                     logger.info("⏰ [清晨刷新] 自动触发 --refresh-morning (Woody/汇率/VPS)")
                     system_status.add_milestone("INFO", "⏰ 9:20 自动清晨数据刷新")
                     if _run_daily_updater(["--refresh-morning"]):
+                        _morning_refreshed_today = True
+                        _morning_refresh_time = today
                         logger.info("✅ [清晨刷新] 已启动 --refresh-morning")
                     else:
                         logger.warning("⚠️ [清晨刷新] 启动失败")
@@ -1879,20 +1867,9 @@ async def trigger_task(task: str):
         script_path = task_entry
         extra_args = []
     
-    # [V4.1] 尝试多种 Python 路径
-    python_exe_candidates = [
-        os.path.normpath(os.path.join(backend_dir, "..", "..", ".venv", "Scripts", "python.exe")),  # 项目 .venv
-        os.path.normpath(os.path.join(backend_dir, "..", "..", "..", ".venv", "Scripts", "python.exe")),  # 上级 .venv
-        os.path.normpath(os.path.join(backend_dir, "..", "..", "..", "Python311", "python.exe")),  # Python311
-        "python",  # 系统 Python
-    ]
-    
-    python_exe = None
-    for candidate in python_exe_candidates:
-        if os.path.exists(candidate):
-            python_exe = candidate
-            logger.info(f"✅ 找到 Python: {python_exe}")
-            break
+    python_exe = resolve_python_executable(backend_dir)
+    if python_exe:
+        logger.info(f"✅ 找到 Python: {python_exe}")
     
     if not python_exe:
         error_msg = "未找到可用的 Python 解释器"
@@ -1965,15 +1942,16 @@ async def get_data_status():
     for key, label in sources.items():
         synced = db.is_access_synced_today(today, source=key)
         status[key] = {"label": label, "synced": synced}
-    status["nav"] = {"label": "基金净值", "synced": False}
-    status["morning"] = {"label": "清晨数据", "synced": _morning_refreshed_today}
     # 统计
     morning_ok = all(status[k]["synced"] for k in sources)
+    status["nav"] = {"label": "基金净值", "synced": False}
+    status["morning"] = {"label": "清晨数据", "synced": morning_ok}
     return {
         "status": "ok",
         "data": {
             "sources": status,
-            "morning_ready": _morning_refreshed_today,
+            "morning_ready": morning_ok,
+            "morning_triggered": _morning_refreshed_today,
             "all_morning_done": morning_ok,
             "today": today
         }
