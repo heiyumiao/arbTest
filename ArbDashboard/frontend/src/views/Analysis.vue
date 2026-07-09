@@ -847,7 +847,7 @@ const isHedgePriceInitialized = ref(false)
 
 // 实时估值计算器新增反应状态
 const meta = ref<any>(null)
-const lofBroker = ref('yinhe_qmt')
+const lofBroker = ref('huatai_qmt')
 const latestExchangeRateInput = ref(0) // 初始0，加载完成后才显示
 const testEtfPrices = reactive<Record<string, number>>({})
 const testFutPrice = ref(0)
