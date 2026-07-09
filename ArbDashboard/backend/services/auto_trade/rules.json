@@ -35,6 +35,6 @@
         "order_vol": 2000,
         "capital_limit_wan": 10,
         "id": "d9b3cabd-f64d-4cb1-b8bf-a840dc002d79",
-        "enabled": false
+        "enabled": true
     }
 ]
