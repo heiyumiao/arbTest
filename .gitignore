@@ -12,6 +12,7 @@ ArbDashboard/backend/core/auto_trade/
 # === 账号与私密配置 (禁止上传) ===
 arbcore/config/account_private.py
 account_private.py
+_mytoken.py
 arb_config.yaml
 *.local.py
 .env
