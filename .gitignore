@@ -5,6 +5,7 @@
 # === 所有 private 目录 (禁止上传) ===
 **/private/
 ArbDashboard/backend/core/auto_trade/
+ArbDashboard/backend/scheduler/*.lock
 **/Lazy.vue
 **/*lazy*
 # 注意：下面的取反已移除，所有 lazy 相关文件都不上传
